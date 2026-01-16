@@ -1,27 +1,9 @@
-// ================== DESIGN CONSTANTS (FIGMA SPACE) ==================
-// All positions are designed in a 1920x1080 artboard.
-// We keep that as "virtual space" and scale it to any screen size.
-
+// DESIGN CONSTANTS (FIGMA SPACE)
 const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 1080;
-
-// These will be computed so the art scales and stays centered.
 let sceneScale = 1;
 let sceneOffsetX = 0;
 let sceneOffsetY = 0;
-
-// We'll keep the p5 canvas so we can set its cursor style
-let canvas;
-
-// Global mouse in "design space"
-let mouseDesignX = 0;
-let mouseDesignY = 0;
-
-// Track whether we are hovering any live turtle (for cursor)
-let isHoveringLiveTurtle = false;
-
-// Cursor mode: "default" | "hover" | "warning"
-let cursorMode = "default";
 
 function updateSceneTransform() {
   // Fit the 1920x1080 design into current window, keep aspect ratio
@@ -30,7 +12,37 @@ function updateSceneTransform() {
   sceneOffsetY = (windowHeight - DESIGN_HEIGHT * sceneScale) * 0.5;
 }
 
-// ================== DATA FROM FIGMA ==================
+// ================== CURSOR CONFIG ==================
+// Custom cursor images 
+const CURSOR_DEFAULT = "assets/cursor.svg";    
+const CURSOR_POINTER = "assets/pointer.svg";   
+const CURSOR_ALERT   = "assets/canhbao.svg";   
+let currentCursor = null;     
+let isHoveringAnyTurtle = false;
+let isHoveringUI = false;      // hovering button (More, Clean, speaker, Back)
+
+function applyCursor(url) {
+  if (currentCursor === url) return;
+  currentCursor = url;
+  document.body.style.cursor = `url("${url}") 16 16, auto`;
+}
+
+function updateCursor() {
+ 
+  if (dangerLevel > 0.9) {
+    applyCursor(CURSOR_ALERT);
+    return;
+  }
+
+  
+  if (isHoveringAnyTurtle || isHoveringUI) {
+    applyCursor(CURSOR_POINTER);
+  } else {
+    applyCursor(CURSOR_DEFAULT);
+  }
+}
+
+//  DATA FROM FIGMA 
 
 let blueOutlineCircles = [
   { x: 719,    y: 564,    d: 40    },
@@ -93,7 +105,7 @@ let blueFilledCircles = [
   { x: 1883,   y: 1084,   d: 888 }
 ];
 
-// ================== UTILS ==================
+// UTILS 
 
 function buildArray(n, fillFunction) {
   let outputArray = [];
@@ -152,7 +164,7 @@ function pickThetaInsideCanvas(cx, cy, r, margin) {
   return candidates[floor(random(candidates.length))];
 }
 
-// ================== STATE ==================
+//  STATE
 
 let liveTurtles = [];
 let deadBgTurtles = [];
@@ -167,12 +179,14 @@ let dangerLevel = 0;
 
 let btnClean = null;
 let domMoreBtn = null;
+let musicBtn = null;
+
+let canvasP5 = null;
 
 // music toggle
-let musicBtn = null;
-let isMusicOn = true;   // UI state: user wants music or not
+let isMusicOn = true;   
 
-// ================== SOUNDS ==================
+//  SOUNDS
 
 let sEat = null;       // uc.wav
 let sDrop = null;      // bubble.wav
@@ -181,7 +195,12 @@ let sTurnRed = null;   // turn red.wav
 let sClean = null;     // underwater.wav
 let sAmbient = null;   // ambient music with noise.wav
 
-// ================== CONFIG ==================
+// new click sounds
+let sClickOverlay = null; // overlay-click.wav
+let sClickError   = null; // error-click.wav
+let sClickSpeaker = null; // loa.wav
+
+//  CONFIG
 
 let REMOVE_LIVE_TURTLE_INDEX = -1;
 let OUTER_LIVE_ORBIT_INDEX = 11;
@@ -223,7 +242,7 @@ const BLOB_MAX_LEN = 120;
 const BLOB_MIN_THICK = 6;
 const BLOB_MAX_THICK = 14;
 
-// ================== QUOTES + TEXT ORBITS ==================
+// QUOTES + TEXT ORBITS 
 
 let quotes = [
   "Their survival is our responsibility; we must create hope.",
@@ -277,54 +296,7 @@ function isCircleUsedByText(idx) {
   return false;
 }
 
-// ================== CURSOR HELPERS ==================
-
-function setCursorMode(newMode) {
-  if (newMode === cursorMode) return; // avoid spamming DOM
-  cursorMode = newMode;
-
-  const body = document.body;
-  let canvasCursor, bodyCursor, btnCursor, warningCursor;
-
-  const defaultCursor = 'url("assets/cursor.svg") 16 16, auto';
-  const pointerCursor = 'url("assets/pointer.svg") 16 16, pointer';
-  const warning = 'url("assets/canhbao.svg") 16 16, auto';
-
-  if (newMode === "warning") {
-    bodyCursor = warning;
-    canvasCursor = warning;
-    warningCursor = warning;
-  } else if (newMode === "hover") {
-    // Hover mode: we are currently on an interactive thing (turtle),
-    // so canvas uses pointer.svg, body stays default.
-    bodyCursor = defaultCursor;
-    canvasCursor = pointerCursor;
-    warningCursor = pointerCursor; // for buttons in hover/normal mode
-  } else {
-    // default
-    bodyCursor = defaultCursor;
-    canvasCursor = defaultCursor;
-    warningCursor = pointerCursor; // buttons still appear clickable
-  }
-
-  if (body) {
-    body.style.cursor = bodyCursor;
-  }
-  if (canvas && canvas.elt) {
-    canvas.elt.style.cursor = canvasCursor;
-  }
-  if (domMoreBtn) {
-    domMoreBtn.style.cursor = warningCursor;
-  }
-  if (btnClean) {
-    btnClean.style("cursor", warningCursor);
-  }
-  if (musicBtn) {
-    musicBtn.style("cursor", warningCursor);
-  }
-}
-
-// ================== PRELOAD ==================
+// PRELOAD 
 
 function preload() {
   // Use SVG turtle sprite
@@ -342,13 +314,18 @@ function preload() {
   sTurnRed  = loadSound("assets/turn red.wav",                  () => {}, () => {});
   sClean    = loadSound("assets/underwater.wav",                () => {}, () => {});
   sAmbient  = loadSound("assets/ambient music with noise.wav",  () => {}, () => {});
+
+  // new click sounds
+  sClickOverlay = loadSound("assets/overlay-click.wav", () => {}, () => {});
+  sClickError   = loadSound("assets/error-click.wav",   () => {}, () => {});
+  sClickSpeaker = loadSound("assets/loa.wav",           () => {}, () => {});
 }
 
-// ================== SETUP ==================
+// SETUP 
 
 function setup() {
   // Responsive canvas: match browser window
-  canvas = createCanvas(windowWidth, windowHeight);
+  canvasP5 = createCanvas(windowWidth, windowHeight);
   frameRate(30);
 
   updateSceneTransform(); // compute sceneScale + offsets
@@ -373,10 +350,13 @@ function setup() {
   btnClean.style("background", "transparent");
   btnClean.style("color", "#FFFFFF");
   btnClean.style("font-size", "0.94vw");
-  btnClean.style("cursor", "pointer"); // will be overridden by setCursorMode
+  btnClean.style("cursor", "inherit"); // inherit body cursor (custom SVG)
   btnClean.style("font-family", "Atkinson Hyperlegible Mono, monospace");
   btnClean.style("z-index", "500");
   btnClean.mousePressed(startCleaning);
+  // hover events for custom pointer
+  btnClean.mouseOver(() => { isHoveringUI = true; });
+  btnClean.mouseOut(()  => { isHoveringUI = false; });
 
   // Music toggle icon – bottom right, aligned with "More" button (roughly)
   let rightMargin = width * 0.0208;
@@ -384,8 +364,39 @@ function setup() {
   musicBtn = createImg("assets/musicon.svg", "toggle music");
   musicBtn.position(width - rightMargin - iconSize, height - height * 0.06 - iconSize / 2);
   musicBtn.size(iconSize, iconSize);
-  musicBtn.style("cursor", "pointer"); // overridden by setCursorMode
+  musicBtn.style("cursor", "inherit");  // custom cursor from body
   musicBtn.mousePressed(toggleMusic);
+  musicBtn.mouseOver(() => { isHoveringUI = true; });
+  musicBtn.mouseOut(()  => { isHoveringUI = false; });
+
+  // More button is a plain HTML element, add hover + click listeners for cursor & sound
+  if (domMoreBtn) {
+    domMoreBtn.style.cursor = "inherit"; // inherit body cursor
+    domMoreBtn.addEventListener("mouseenter", () => {
+      isHoveringUI = true;
+    });
+    domMoreBtn.addEventListener("mouseleave", () => {
+      isHoveringUI = false;
+    });
+    domMoreBtn.addEventListener("click", () => {
+      if (sClickOverlay) sClickOverlay.play();
+    });
+  }
+
+  // If you have a Back button inside overlay (id="btnBack"), hook it too
+  let backBtn = document.getElementById("btnBack");
+  if (backBtn) {
+    backBtn.style.cursor = "inherit";
+    backBtn.addEventListener("mouseenter", () => {
+      isHoveringUI = true;
+    });
+    backBtn.addEventListener("mouseleave", () => {
+      isHoveringUI = false;
+    });
+    backBtn.addEventListener("click", () => {
+      if (sClickOverlay) sClickOverlay.play();
+    });
+  }
 
   // Set sound volumes
   if (sAmbient) {
@@ -397,12 +408,39 @@ function setup() {
   if (sHover)   sHover.setVolume(0.5);
   if (sTurnRed) sTurnRed.setVolume(0.7);
   if (sClean)   sClean.setVolume(0.7);
+  if (sClickOverlay) sClickOverlay.setVolume(0.7);
+  if (sClickError)   sClickError.setVolume(0.7);
+  if (sClickSpeaker) sClickSpeaker.setVolume(0.7);
 
   // Try to start ambient music right away (browser may still block it)
   ensureAmbientPlaying();
 
-  // Set initial cursor to default (cursor.svg)
-  setCursorMode("default");
+  // initial cursor
+  applyCursor(CURSOR_DEFAULT);
+
+  // IMPORTANT: only clicks on canvas will spawn trash / play bubble/error
+  if (canvasP5 && canvasP5.mousePressed) {
+    // just in case, clear old binding
+  }
+  canvasP5.mousePressed(handleCanvasPressed);
+}
+
+// canvas-only mouse handler (so clicking on DOM buttons không spawn rác)
+function handleCanvasPressed() {
+  // Make sure audio context is unlocked on first user interaction
+  if (typeof userStartAudio === "function") {
+    userStartAudio();
+  }
+
+  ensureAmbientPlaying();
+
+  // Convert screen mouse → design-space mouse
+  let px = (mouseX - sceneOffsetX) / sceneScale;
+  let py = (mouseY - sceneOffsetY) / sceneScale;
+
+  if (!isClickOnAnyTurtle(px, py)) {
+    addPlasticAtPoint(px, py);
+  }
 }
 
 // Keep canvas responsive on window resize
@@ -421,7 +459,7 @@ function windowResized() {
   }
 }
 
-// ================== PATH HELPERS ==================
+//  PATH HELPERS 
 
 function setTurtlePosOnPath(t) {
   let wobble = sin(t.theta * t.wobbleFreq + t.wobblePhase) * t.wobbleAmp;
@@ -431,7 +469,7 @@ function setTurtlePosOnPath(t) {
   t.y = t.pathCy + sin(t.theta) * r;
 }
 
-// ================== INIT ==================
+//  INIT 
 
 function initLiveTurtles() {
   liveTurtles = [];
@@ -574,7 +612,7 @@ function initBlobs() {
   blobs = buildArray(BLOB_COUNT, () => createRandomBlob());
 }
 
-// ================== GAME HELPERS ==================
+// art HELPERS 
 
 function areAllLiveDead() {
   for (let i = 0; i < liveTurtles.length; i++) {
@@ -594,9 +632,6 @@ function startCleaning() {
   isCleaning = true;
   isGameOver = false;
   if (sClean) sClean.play();
-
-  // When starting to clean, go back to default cursor (no warning)
-  setCursorMode("default");
 }
 
 function finishCleaningAndReset() {
@@ -606,16 +641,14 @@ function finishCleaningAndReset() {
   for (let i = 0; i < liveTurtles.length; i++) {
     liveTurtles[i].isDead = false;
   }
-
-  // After everything is cleaned, back to default safe state
-  setCursorMode("default");
 }
 
-// ================== UPDATE ==================
+// i ll keep a "design space" mouse position updated per frame
+let mouseDesignX = 0;
+let mouseDesignY = 0;
 
 function updateLiveTurtles() {
-  // Reset hover flag each frame
-  isHoveringLiveTurtle = false;
+  isHoveringAnyTurtle = false;  // reset each frame
 
   for (let i = 0; i < liveTurtles.length; i++) {
     let t = liveTurtles[i];
@@ -626,17 +659,13 @@ function updateLiveTurtles() {
     let dMouse = dist(mouseDesignX, mouseDesignY, t.x, t.y);
     let isHovered = dMouse < hoverRadius;
 
-    // If we hover this turtle, mark global flag
-    if (isHovered) {
-      isHoveringLiveTurtle = true;
-    }
-
     // First time hovered → dash + sound
     if (isHovered && !t.wasHovered && !isCleaning) {
       if (sHover) sHover.play();
     }
 
     if (isHovered) {
+      isHoveringAnyTurtle = true;
       t.speed = t.baseSpeed * HOVER_SPEED_BOOST;
     } else {
       t.speed = lerp(t.speed, t.baseSpeed, 0.10);
@@ -756,7 +785,7 @@ function updateBlobs() {
   }
 }
 
-// ================== INTERACTION ==================
+//  INTERACTION 
 
 function isClickOnAnyTurtle(px, py) {
   for (let i = 0; i < liveTurtles.length; i++) {
@@ -783,25 +812,11 @@ function ensureAmbientPlaying() {
   }
 }
 
-function mousePressed() {
-  // Make sure audio context is unlocked on first user interaction
-  if (typeof userStartAudio === "function") {
-    userStartAudio();
-  }
-
-  ensureAmbientPlaying();
-
-  // Convert screen mouse → design-space mouse
-  let px = (mouseX - sceneOffsetX) / sceneScale;
-  let py = (mouseY - sceneOffsetY) / sceneScale;
-
-  if (!isClickOnAnyTurtle(px, py)) {
-    addPlasticAtPoint(px, py);
-  }
-}
-
 function toggleMusic() {
   if (!sAmbient) return;
+
+  // play click sound for speaker toggle
+  if (sClickSpeaker) sClickSpeaker.play();
 
   if (isMusicOn) {
     // Turn OFF: pause ambient loop
@@ -819,7 +834,14 @@ function toggleMusic() {
 function addPlasticAtPoint(px, py) {
   trashDrops += 1;
 
-  if (sDrop && !isCleaning) sDrop.play();
+  if (!isCleaning) {
+    if (dangerLevel > 0.9) {
+      // in danger mode, click sounds like an error
+      if (sClickError) sClickError.play();
+    } else {
+      if (sDrop) sDrop.play();
+    }
+  }
 
   for (let j = 0; j < PLASTIC_CLUSTER; j++) {
     let angle = random(TWO_PI);
@@ -850,8 +872,7 @@ function addPlasticAtPoint(px, py) {
   }
 }
 
-// ================== DRAW HELPERS ==================
-
+//  DRAW HELPERS 
 function drawTurtleImage(x, y, size, angle, isDead, isBackground, extraOffset) {
   if (extraOffset === undefined) extraOffset = 0;
 
@@ -1033,8 +1054,7 @@ function drawBlobs() {
   }
 }
 
-// ================== MAIN DRAW ==================
-
+//  MAIN DRAW
 function draw() {
   background(0);
 
@@ -1053,18 +1073,6 @@ function draw() {
   updateLiveTurtles();
   updateOrbitText();
   updateBlobs();
-
-  // --- Cursor mode logic (after all updates) ---
-  if (isGameOver && dangerLevel > 0.7) {
-    // Ocean is in danger → warning cursor everywhere
-    setCursorMode("warning");
-  } else if (isHoveringLiveTurtle && !isCleaning) {
-    // Hovering a live turtle → pointer cursor
-    setCursorMode("hover");
-  } else {
-    // Normal state
-    setCursorMode("default");
-  }
 
   // Update UI button styles according to dangerLevel
   // Base: blue (#1E97F2) → red (#FF0000)
@@ -1090,6 +1098,9 @@ function draw() {
       musicBtn.style("filter", "none");
     }
   }
+
+  // Update cursor *after* we know hover states + dangerLevel
+  updateCursor();
 
   // Draw everything in design space, then scale to screen
   push();
